@@ -1,0 +1,29 @@
+//project setup
+# Install DFX SDK
+sh -ci "$(curl -fsSL https://sdk.dfinity.org/install.sh)"
+
+# Create new project
+dfx new icp_wallet
+cd icp_wallet
+//dependencies
+[package]
+name = "icp_wallet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+candid = "0.8.2"
+ic-cdk = "0.6.0"
+ic-cdk-macros = "0.6.0"
+serde = { version = "1.0", features = ["derive"] }
+//DEPLOYMENT TO LOCAL NETWORK
+# Start local replica
+dfx start --background
+
+# Deploy canister
+dfx deploy
+//wallet interaction
+//query balance
+dfx canister call icp_wallet balanceOf '(principal "<YOUR_PRINCIPAL>")'
+//transfer token
+dfx canister call icp_wallet transfer '(principal "<RECIPIENT_PRINCIPAL>", 1000:nat)'
