@@ -1,0 +1,7 @@
+//bash
+# Install DFX SDK
+sh -ci "$(curl -fsSL https://sdk.dfinity.org/install.sh)"
+
+# Create new project
+dfx new icp_wallet
+cd icp_wallet
