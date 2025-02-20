@@ -1,0 +1,131 @@
+// src/lib.rs
+use ic_cdk::{caller, export::candid::{CandidType, Nat}, storage};
+use ic_cdk_macros::*;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(CandidType, Deserialize, Serialize)]
+struct TokenWallet {
+    balances: HashMap<Principal, Nat>,
+    allowances: HashMap<Principal, HashMap<Principal, Nat>>,
+}
+
+impl Default for TokenWallet {
+    fn default() -> Self {
+        TokenWallet {
+            balances: HashMap::new(),
+            allowances: HashMap::new(),
+        }
+    }
+}
+
+// IRCRC2 Standard Interface
+#[query(name = "balanceOf")]
+fn balance_of(owner: Principal) -> Nat {
+    let wallet = storage::get::<TokenWallet>();
+    wallet.balances.get(&owner).cloned().unwrap_or(Nat::from(0))
+}
+
+#[update(name = "transfer")]
+fn transfer(to: Principal, amount: Nat) -> Result<(), String> {
+    let from = caller();
+    let mut wallet = storage::get_mut::<TokenWallet>();
+    
+    let from_balance = wallet.balances.get(&from).cloned().unwrap_or(Nat::from(0));
+    if from_balance < amount {
+        return Err("Insufficient balance".to_string());
+    }
+
+    *wallet.balances.entry(from).or_insert(Nat::from(0)) -= amount.clone();
+    *wallet.balances.entry(to).or_insert(Nat::from(0)) += amount;
+    
+    Ok(())
+}
+
+#[update(name = "transferFrom")]
+fn transfer_from(from: Principal, to: Principal, amount: Nat) -> Result<(), String> {
+    let spender = caller();
+    let mut wallet = storage::get_mut::<TokenWallet>();
+    
+    let allowance = wallet.allowances
+        .get(&from)
+        .and_then(|a| a.get(&spender))
+        .cloned()
+        .unwrap_or(Nat::from(0));
+
+    if allowance < amount {
+        return Err("Allowance exceeded".to_string());
+    }
+
+    let from_balance = wallet.balances.get(&from).cloned().unwrap_or(Nat::from(0));
+    if from_balance < amount {
+        return Err("Insufficient balance".to_string());
+    }
+
+    // Update balances
+    *wallet.balances.entry(from).or_insert(Nat::from(0)) -= amount.clone();
+    *wallet.balances.entry(to).or_insert(Nat::from(0)) += amount.clone();
+    
+    // Update allowance
+    *wallet.allowances
+        .entry(from)
+        .or_insert(HashMap::new())
+        .entry(spender)
+        .or_insert(Nat::from(0)) -= amount;
+
+    Ok(())
+}
+
+// Security Features
+#[update(name = "approve")]
+fn approve(spender: Principal, amount: Nat) -> Result<(), String> {
+    let owner = caller();
+    let mut wallet = storage::get_mut::<TokenWallet>();
+    
+    wallet.allowances
+        .entry(owner)
+        .or_insert(HashMap::new())
+        .insert(spender, amount);
+        
+    Ok(())
+}
+
+// Unit Tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ic_cdk_test::*;
+
+    #[test]
+    fn test_transfer() {
+        let mut test_wallet = TokenWallet::default();
+        let alice = Principal::from_slice(&[1; 29]);
+        let bob = Principal::from_slice(&[2; 29]);
+        
+        test_wallet.balances.insert(alice, Nat::from(1000));
+        
+        storage::set(test_wallet);
+        mock_caller(alice);
+        
+        assert_eq!(transfer(bob, Nat::from(500)), Ok(()));
+        assert_eq!(balance_of(alice), Nat::from(500));
+        assert_eq!(balance_of(bob), Nat::from(500));
+    }
+
+    #[test]
+    fn test_insufficient_balance() {
+        let mut test_wallet = TokenWallet::default();
+        let alice = Principal::from_slice(&[1; 29]);
+        let bob = Principal::from_slice(&[2; 29]);
+        
+        test_wallet.balances.insert(alice, Nat::from(100));
+        
+        storage::set(test_wallet);
+        mock_caller(alice);
+        
+        assert_eq!(
+            transfer(bob, Nat::from(500)),
+            Err("Insufficient balance".to_string())
+        );
+    }
+}
